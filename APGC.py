@@ -33,7 +33,16 @@ def urlConvert(string: str)-> str:
 def userAccess(username: str)-> dict|None:
     if not isinstance(username, str):
         raise TypeError
-    qUsername = urlConvert(username.strip())
+    delete = False
+    clanlessUser = ''
+    for i in username:
+        if i == '[':
+            delete = True
+        if not delete:
+            clanlessUser += i
+        if i == ']':
+            delete = False
+    qUsername = urlConvert(clanlessUser.strip())
     users = requests.get(f'https://api.aredl.net/v2/api/users?name_filter={qUsername}').json()
     if len(users['data']) == 0:
            return None
@@ -46,13 +55,9 @@ def userAccess(username: str)-> dict|None:
         lbProfile = leaderboard['data'][0]
     return profile, lbProfile
 
-def levelPointsAddition(username: str|None, levelPoses: set, profileData: dict|None = None, levelList: list|None = None, packsList: list|None = None)-> int:
+def levelPointsAddition(username: str, levelPoses: set, profileData: dict|None = None, levelList: list|None = None, packsList: list|None = None)-> int:
     if levelList is None:
         levelList = requests.get('https://api.aredl.net/v2/api/aredl/levels').json()
-    guest = False
-    if username is None:
-        username = ''
-        guest = True
     elif not isinstance(levelPoses, set) or not isinstance(username, str):
         raise TypeError
     else:
@@ -173,10 +178,15 @@ def main():
     levelList = requests.get('https://api.aredl.net/v2/api/aredl/levels').json()
     packsList = requests.get('https://api.aredl.net/v2/api/aredl/pack-tiers').json()
     levelPoses = []
+    guest = False
     print('Do "?" for help')
     while True:
         if not usernameSet:
-            username = input('Enter your username (without clan)>')
+            username = input('Enter your username>')
+            if len(username.strip()) == 0:
+                guest = True
+                usernameSet = True
+                continue
             userData = userAccess(username)
             if userData is None:
                 print('Profile not found')
@@ -184,6 +194,7 @@ def main():
             profileData = userData[0]
             lbProfileData = userData[1]
             usernameSet = True
+            guest = False
         levelName = ''
         skipSearch = False
         calculatePoints = False
@@ -214,14 +225,15 @@ def main():
             if len(levelPoses) == 0:
                 levelList = requests.get('https://api.aredl.net/v2/api/aredl/levels').json()
                 packsList = requests.get('https://api.aredl.net/v2/api/aredl/pack-tiers').json()
-                userData = userAccess(username)
-                if userData is None:
-                    print('Profile not found')
-                    usernameSet = False
+                if not guest:
+                    userData = userAccess(username)
+                    if userData is None:
+                        print('Profile not found')
+                        usernameSet = False
+                        continue
+                    profileData = userData[0]
+                    lbProfileData = userData[1]
                     continue
-                profileData = userData[0]
-                lbProfileData = userData[1]
-                continue
             else:
                 print('Unable to run when there is a level waiting for calculation')
                 continue
@@ -233,6 +245,9 @@ def main():
             calculatePoints = True
             levelPos = levelPos[1:]
 
+        if guest:
+            profileData = {'records':[]}
+            lbProfileData = None
         if skipSearch:
             calculatePoints = True
         else:
@@ -264,7 +279,6 @@ def main():
             try:
                 totalPoints = levelPointsAddition('', setLevelPoses, profileData, levelList, packsList)
             except:
-                raise
                 print('Point calculation failed')
             else:
                 if lbProfileData is None:
