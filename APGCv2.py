@@ -1,4 +1,4 @@
-raise NotImplementedError
+#raise NotImplementedError
 
 import requests
 
@@ -48,47 +48,58 @@ def userAccess(username: str)-> dict|None:
         lbProfile = leaderboard['data'][0]
     return profile, lbProfile
 
-def levelPointsAddition(username: str, levelPos: int, profileData: dict|None = None, levelList: list|None = None, packsList: list|None = None)-> int:
-    if not isinstance(levelPos, int) or not isinstance(username, str):
+def levelPointsAddition(username: str|None, levelPoses: set, profileData: dict|None = None, levelList: list|None = None, packsList: list|None = None)-> int:
+    if levelList is None:
+        levelList = requests.get('https://api.aredl.net/v2/api/aredl/levels').json()
+    guest = False
+    if username is None:
+        username = ''
+        guest = True
+    elif not isinstance(levelPoses, set) or not isinstance(username, str):
         raise TypeError
-    levelPos -= 1
+    else:
+        for i in levelPoses:
+            if not isinstance(i, int):
+                raise TypeError
+            elif i < 1 or i >= len(levelList):
+                raise IndexError('Placement(s) out of bounds of the list')
+
+    levelPoses = set(map(lambda x : x - 1, levelPoses))
     if profileData is None:
         profileData = userAccess(username)[0]
     else:
         username = profileData['global_name']
-    if levelList is None:
-        levelList = requests.get('https://api.aredl.net/v2/api/aredl/levels').json()
     if packsList is None:
         packsList = requests.get('https://api.aredl.net/v2/api/aredl/pack-tiers').json()
-    
-    if levelPos < 0 or levelPos >= len(levelList):
-        raise ValueError('Placement outside of bounds')
-    levelData = levelList[levelPos]
-    if levelData['legacy']:
-        return 0.0
-    else:
-        points = levelData['points']
-        levelId = levelData['id']
-        qLevelId = urlConvert(levelId)
-        levelsBeaten = list(map(lambda x : x['level']['position'], profileData['records']))
-        levelPacks = requests.get(f'https://api.aredl.net/v2/api/aredl/levels/{qLevelId}/packs').json()
-        nameBased = False
-        nameBased = True
-        for i in levelPacks:
-            pack = i['id']
-            tier = i['tier']['id']
-            packName = i['name']
-            tierName = i['tier']['name']
-            for j in packsList:
-                if j['id'] == tier or (nameBased and j['name'] == tierName):
-                    for k in j['packs']:
-                        if k['id'] == pack or (nameBased and k['name'] == packName):
-                            completedLevelsPack = []
-                            for l in k['levels']:
-                                completedLevelsPack.append(not(l['position'] in levelsBeaten or l['position'] == levelPos + 1))
-                            if not any(completedLevelsPack):
-                                points += k['points']
-        return points
+    levelPacks = set()
+    points = 0
+    levelsBeaten = list(map(lambda x : x['level']['position'], profileData['records']))
+    for i in levelPoses:
+        levelData = levelList[i]
+        if levelData['legacy']:
+            levelPoses.remove(i)
+            continue
+        points += levelData['points']
+        levelPacks.add(requests.get(f'https://api.aredl.net/v2/api/aredl/levels/{urlConvert(levelData['id'])}/packs').json())
+        levelsBeaten.append(i+1)
+    #make nameBased = True a comment once v2 of API officialy releases, since right now for some reason IDs of same tiers/packs in different areas do not match sometimes, this can be left on but it is recomended to remove nameBased if the ids are more stable then
+    nameBased = False
+    nameBased = True
+    for i in levelPacks:
+        pack = i['id']
+        tier = i['tier']['id']
+        packName = i['name']
+        tierName = i['tier']['name']
+        for j in packsList:
+            if j['id'] == tier or (nameBased and j['name'] == tierName):
+                for k in j['packs']:
+                    if k['id'] == pack or (nameBased and k['name'] == packName):
+                        completedLevelsPack = []
+                        for l in k['levels']:
+                            completedLevelsPack.append(not(l['position'] in levelsBeaten))
+                        if not any(completedLevelsPack):
+                            points += k['points']
+    return points
 
 def levelPlacementSearch(query: str, levelList: list|None = None)-> int:
     if not isinstance(query, str):
