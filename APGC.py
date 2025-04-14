@@ -30,9 +30,6 @@ def urlConvert(string: str)-> str:
             queryString += i
     return queryString
 
-def levelPlacementSearch(query: str)-> int:
-    pass
-
 def userAccess(username: str)-> dict|None:
     if not isinstance(username, str):
         raise TypeError
@@ -49,55 +46,137 @@ def userAccess(username: str)-> dict|None:
         lbProfile = leaderboard['data'][0]
     return profile, lbProfile
 
-def levelPointsAddition(username: str, levelPos: int, profileData: dict|None = None, levelList: list|None = None, packsList: list|None = None)-> int:
-    if not isinstance(levelPos, int) or not isinstance(username, str):
+def levelPointsAddition(username: str|None, levelPoses: set, profileData: dict|None = None, levelList: list|None = None, packsList: list|None = None)-> int:
+    if levelList is None:
+        levelList = requests.get('https://api.aredl.net/v2/api/aredl/levels').json()
+    guest = False
+    if username is None:
+        username = ''
+        guest = True
+    elif not isinstance(levelPoses, set) or not isinstance(username, str):
         raise TypeError
-    levelPos -= 1
+    else:
+        for i in levelPoses:
+            if not isinstance(i, int):
+                raise TypeError
+            elif i < 1 or i >= len(levelList):
+                raise IndexError('Placement(s) out of bounds of the list')
+
+    levelPoses = set(map(lambda x : x - 1, levelPoses))
     if profileData is None:
         profileData = userAccess(username)[0]
     else:
         username = profileData['global_name']
-    if levelList is None:
-        levelList = requests.get('https://api.aredl.net/v2/api/aredl/levels').json()
     if packsList is None:
         packsList = requests.get('https://api.aredl.net/v2/api/aredl/pack-tiers').json()
-    
-    if levelPos < 0 or levelPos >= len(levelList):
-        raise ValueError('Placement outside of bounds')
-    levelData = levelList[levelPos]
-    if levelData['legacy']:
-        return 0.0
+    levelPacks = dict()
+    points = 0
+    levelsBeaten = list(map(lambda x : x['level']['position'], profileData['records']))
+    for i in levelPoses:
+        levelData = levelList[i]
+        if levelData['legacy']:
+            levelPoses.remove(i)
+            continue
+        points += levelData['points']
+        for j in requests.get(f'https://api.aredl.net/v2/api/aredl/levels/{urlConvert(levelData['id'])}/packs').json():
+            if not j['id'] in levelPacks.keys():
+                levelPacks[j['id']] = j
+        levelsBeaten.append(i+1)
+    #make nameBased = True a comment once v2 of API officialy releases, since right now for some reason IDs of same tiers/packs in different areas do not match sometimes, this can be left on but it is recomended to remove nameBased if the ids are more stable then
+    nameBased = False
+    nameBased = True
+    for i in levelPacks.values():
+        pack = i['id']
+        tier = i['tier']['id']
+        packName = i['name']
+        tierName = i['tier']['name']
+        for j in packsList:
+            if j['id'] == tier or (nameBased and j['name'] == tierName):
+                for k in j['packs']:
+                    if k['id'] == pack or (nameBased and k['name'] == packName):
+                        completedLevelsPack = []
+                        for l in k['levels']:
+                            completedLevelsPack.append(not(l['position'] in levelsBeaten))
+                        if not any(completedLevelsPack):
+                            points += k['points']
+    return points
+
+def levelPlacementSearch(query: str, levelList: list|None = None)-> int:
+    if not isinstance(query, str):
+        raise TypeError
+    if levelList is None:
+        levelList = requests.get('https://api.aredl.net/v2/api/aredl/levels').json()
+
+    #GUIDE TO QUERY IN LEVEL PLACEMENT SEARCHING:
+    # A query representing an int will search for a level which is at the placement in the query (starting at 1 going up), an integer outside of the bounds of the list raises IndexError
+    # A query representing an int BUT with either _ or _2p appended at the end will search for a level with a GD ID in the query, _ takes solo or regular results, _2p gives 2 player placement, _2p with non-2player level will give the regular version, raises KeyError if  the ID is not present on the list
+    # A query with the exact name of the level will search for the hardest level with the exact name, if the query ends with ")" (meaning brackets are in the query), it will search for the exact same name as shown on the website, raises KeyError if it fails to find a level with the name
+
+    if query.isdecimal():
+        levelPos = int(query) - 1
+        if levelPos < 0 or levelPos >= len(levelList):
+            raise IndexError('Placement out of bounds')
     else:
-        points = levelData['points']
-        levelId = levelData['id']
-        qLevelId = urlConvert(levelId)
-        levelsBeaten = list(map(lambda x : x['level']['position'], profileData['records']))
-        levelPacks = requests.get(f'https://api.aredl.net/v2/api/aredl/levels/{qLevelId}/packs').json()
-        nameBased = False
-        nameBased = True
-        for i in levelPacks:
-            pack = i['id']
-            tier = i['tier']['id']
-            packName = i['name']
-            tierName = i['tier']['name']
-            for j in packsList:
-                if j['id'] == tier or (nameBased and j['name'] == tierName):
-                    for k in j['packs']:
-                        if k['id'] == pack or (nameBased and k['name'] == packName):
-                            completedLevelsPack = []
-                            for l in k['levels']:
-                                completedLevelsPack.append(not(l['position'] in levelsBeaten or l['position'] == levelPos + 1))
-                            if not any(completedLevelsPack):
-                                points += k['points']
-        return points
+        query = (query.lower()).strip()
+        levelIsId = False
+        player2 = False
+        if len(query) > 3:
+            if query[-3:] == '_2p' and query[:-3].isdecimal():
+                levelIsId = True
+                player2 = True
+        if len(query) > 1:
+            if query[:-1].isdecimal() and query[-1] == '_':
+                levelIsId = True
+                player2 = False
+        if levelIsId and player2:
+            levelData = requests.get(f'https://api.aredl.net/v2/api/aredl/levels/{query}').json()
+            if 'position' in levelData.keys():
+                levelPos = levelData['position'] - 1
+            else:
+                levelData = requests.get(f'https://api.aredl.net/v2/api/aredl/levels/{query[:-3]}').json()
+                if 'position' in levelData.keys():
+                    levelPos = levelData['position'] - 1
+                else:
+                    raise KeyError('Level ID is not present in the list')
+        elif levelIsId:
+            levelData = requests.get(f'https://api.aredl.net/v2/api/aredl/levels/{query[:-1]}').json()
+            if 'position' in levelData.keys():
+                levelPos = levelData['position'] - 1
+            else:
+                raise KeyError('Level ID is not present in the list')
+        else:
+            found = False
+            if query[-1] != ')':
+                bracketless = True
+                searchedName = bracketRemover(query).strip()
+            else:
+                bracketless = False
+                searchedName = query.strip()
+            for i in levelList:
+                if bracketless:
+                    if bracketRemover(i['name']).lower() == searchedName:
+                        levelPos = i['position'] - 1
+                        found = True
+                        break
+                else:
+                    if i['name'].lower() == searchedName:
+                        levelPos = i['position'] - 1
+                        found = True
+                        break
+            if not found:
+                raise KeyError('Level with that name not found')
+    return levelPos
+
 
 def main():
     usernameSet = False
     levelList = requests.get('https://api.aredl.net/v2/api/aredl/levels').json()
     packsList = requests.get('https://api.aredl.net/v2/api/aredl/pack-tiers').json()
+    levelPoses = []
+    print('Do "?" for help')
     while True:
         if not usernameSet:
-            username = input('Enter your username (without clan)-')
+            username = input('Enter your username (without clan)>')
             userData = userAccess(username)
             if userData is None:
                 print('Profile not found')
@@ -105,80 +184,96 @@ def main():
             profileData = userData[0]
             lbProfileData = userData[1]
             usernameSet = True
-        levelPos = input('Level placement (1 for the hardest level) (1r), "#" to change username (2r), "." to refresh (4r)-')
+        levelName = ''
+        skipSearch = False
+        calculatePoints = False
+        levelPos = input('Enter the level>')
         levelPos = levelPos.strip()
-        levelIsId = False
-        player2 = False
         if len(levelPos) == 0:
             print('No command entered')
             continue
+
+        elif levelPos[0] == '?':
+            print('List of avaible commands')
+            print(' - "?" - prints this message')
+            print(' - "#" - lets you change your username*')
+            print(' - "." - refreshes all lists which have been stored to remove useless additional requests being called*')
+            print(' - "-XXX" - adds a new level and calculates')
+            print('  - "-" - calculates without adding new level, if no levels are present does nothing (also resets everything)')
+            print('* commands with asterisk are not runnable when there is one level stored waiting for calculation')
+
         elif levelPos[0] == '#':
-            usernameSet = False
-            continue
-        elif levelPos[0] == '.':
-            levelList = requests.get('https://api.aredl.net/v2/api/aredl/levels').json()
-            packsList = requests.get('https://api.aredl.net/v2/api/aredl/pack-tiers').json()
-            userData = userAccess(username)
-            if userData is None:
-                print('Profile not found')
-                continue
-            profileData = userData[0]
-            lbProfileData = userData[1]
-            usernameSet = True
-            continue
-        elif not levelPos.isdecimal():
-            bracketless = False
-            if len(levelPos) > 3:
-                if levelPos[-3:] == '_2p' and levelPos[:-3].isdecimal():
-                    levelIsId = True
-                    player2 = True
-            if not levelIsId:
-                found = False
-                if levelPos[-1] != ')':
-                    bracketless = True
-                    searchedName = bracketRemover(levelPos).lower()
-                for i in levelList:
-                    if bracketless:
-                        if bracketRemover(i['name']).lower() == searchedName:
-                            levelPos = i['position'] - 1
-                            found = True
-                            break
-                    else:
-                        if i['name'].lower() == levelPos.lower():
-                            levelPos = i['position'] - 1
-                            found = True
-                            break
-                if not found:
-                    print('Level with that name not found')
-                    continue
-            else:   
-                levelPos = int(levelPos[:-3]) - 1
-        else:
-            levelPos = int(levelPos) - 1
-        if levelPos < 0 or levelPos >= len(levelList):
-            suffix = ''
-            if player2:
-                suffix = '_2p'
-            levelData = requests.get(f'https://api.aredl.net/v2/api/aredl/levels/{str(levelPos+1) + suffix}').json()
-            if 'message' in levelData.keys():
-                print('Placement out of bounds')
+            if len(levelPoses) == 0:
+                usernameSet = False 
                 continue
             else:
-                levelPos = levelData['position'] - 1
-        levelsBeaten = list(map(lambda x : x['level']['position'], profileData['records']))
-        levelName = levelList[levelPos]['name']
-        if levelPos+1 in levelsBeaten:
-            print(f'{levelName} already beaten - 0.0 points gained')
-        try:
-            totalPoints = levelPointsAddition('', levelPos + 1, profileData, levelList, packsList)
-        except:
-            print('Point calculation failed')            
-            continue
-        if lbProfileData is None:
-            prevPoints = 0
+                print('Unable to run when there is a level waiting for calculation')
+                continue
+
+        elif levelPos[0] == '.':
+            if len(levelPoses) == 0:
+                levelList = requests.get('https://api.aredl.net/v2/api/aredl/levels').json()
+                packsList = requests.get('https://api.aredl.net/v2/api/aredl/pack-tiers').json()
+                userData = userAccess(username)
+                if userData is None:
+                    print('Profile not found')
+                    usernameSet = False
+                    continue
+                profileData = userData[0]
+                lbProfileData = userData[1]
+                continue
+            else:
+                print('Unable to run when there is a level waiting for calculation')
+                continue
+
+        elif levelPos == '-':
+            skipSearch = True
+
+        elif levelPos[0] == '-':
+            calculatePoints = True
+            levelPos = levelPos[1:]
+
+        if skipSearch:
+            calculatePoints = True
         else:
-            prevPoints = lbProfileData['total_points']-1
-        print(f'{totalPoints/10} points gained on completion of {levelName}, resulting in total amount of points: {(totalPoints + prevPoints)/10}')
+            try:
+                levelPos = levelPlacementSearch(levelPos, levelList)
+            except KeyError:
+                print('Level with that name or ID not found')
+                continue
+            except IndexError:
+                print('Placement outside of bounds of the list')
+                continue
+            except:
+                print('Unknown error happened')
+                continue
+            levelName = levelList[levelPos]['name']
+            levelsBeaten = list(map(lambda x : x['level']['position'], profileData['records']))
+            if levelPos+1 in levelsBeaten or levelPos+1 in levelPoses:
+                print(f'{levelName} already beaten/in the list, ignored')
+            else:
+                levelPoses.append(levelPos+1)
+                print(f'{levelName} added to the list, current amount of levels stored: {len(levelPoses)}')
+        if calculatePoints:
+            setLevelPoses = set()
+            for i in levelPoses:
+                setLevelPoses.add(i)
+            if len(setLevelPoses) == 0:
+                print('No levels to be calculated')
+                continue
+            try:
+                totalPoints = levelPointsAddition('', setLevelPoses, profileData, levelList, packsList)
+            except:
+                raise
+                print('Point calculation failed')
+            else:
+                if lbProfileData is None:
+                    prevPoints = 0
+                else:
+                    prevPoints = lbProfileData['total_points']-1
+                print(f'{totalPoints/10} points gained on completion of {levelName}, resulting in total amount of points: {(totalPoints + prevPoints)/10}')
+            levelPoses = []
+            continue
 
 if __name__ == '__main__':
     main()
