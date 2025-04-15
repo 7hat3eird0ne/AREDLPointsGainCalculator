@@ -201,7 +201,7 @@ def main():
             lbProfileData = userData[1]
             usernameSet = True
             guest = False
-        print('Profile found')
+            print('Profile found')
         levelsBeaten = list(map(lambda x : x['level']['position'], profileData['records']))
         levelName = ''
         skipSearch = False
