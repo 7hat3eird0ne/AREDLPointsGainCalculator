@@ -56,57 +56,6 @@ def userAccess(username: str)-> tuple|None:
         lbProfile = leaderboard['data'][0]
     return profile, lbProfile
 
-def levelPointsAddition(levelPoses: set, username: str = '', profileData: dict|None = None, levelList: list|None = None, packsList: list|None = None)-> tuple:
-    if levelList is None:
-        levelList = requests.get('https://api.aredl.net/v2/api/aredl/levels').json()
-    elif not isinstance(levelPoses, set) or not isinstance(username, str):
-        raise TypeError
-    else:
-        for i in levelPoses:
-            if not isinstance(i, int):
-                raise TypeError
-            elif i < 1 or i >= len(levelList):
-                raise IndexError('Placement(s) out of bounds of the list')
-
-    levelPoses = set(map(lambda x : x - 1, levelPoses))
-    if profileData is None:
-        profileData = userAccess(username)[0]
-    if packsList is None:
-        packsList = requests.get('https://api.aredl.net/v2/api/aredl/pack-tiers').json()
-    levelPacks = dict()
-    points = 0
-    levelsBeaten = list(map(lambda x : x['level']['position'], profileData['records']))
-    for i in levelPoses:
-        levelData = levelList[i]
-        if levelData['legacy']:
-            levelPoses.remove(i)
-            continue
-        points += levelData['points']
-        for j in requests.get(f'https://api.aredl.net/v2/api/aredl/levels/{urlConvert(levelData['id'])}/packs').json():
-            if not j['id'] in levelPacks.keys():
-                levelPacks[j['id']] = j
-        levelsBeaten.append(i+1)
-    packPoints = 0
-    #make nameBased = True a comment once v2 of API officialy releases, since right now for some reason IDs of same tiers/packs in different areas do not match sometimes, this can be left on but it is recomended to remove nameBased if the ids are more stable then
-    nameBased = False
-    nameBased = True
-    for i in levelPacks.values():
-        pack = i['id']
-        tier = i['tier']['id']
-        packName = i['name']
-        tierName = i['tier']['name']
-        for j in packsList:
-            if j['id'] == tier or (nameBased and j['name'] == tierName):
-                for k in j['packs']:
-                    if k['id'] == pack or (nameBased and k['name'] == packName):
-                        completedLevelsPack = []
-                        for l in k['levels']:
-                            completedLevelsPack.append(not(l['position'] in levelsBeaten))
-                        if not any(completedLevelsPack):
-                            points += k['points']
-                            packPoints += k['points']
-    return points, packPoints
-
 def levelPlacementSearch(query: str, levelList: list|None = None)-> int:
     if not isinstance(query, str):
         raise TypeError
@@ -173,6 +122,56 @@ def levelPlacementSearch(query: str, levelList: list|None = None)-> int:
                 raise KeyError('Level with that name not found')
     return levelPos
 
+def levelPointsAddition(levelPoses: set, username: str = '', profileData: dict|None = None, levelList: list|None = None, packsList: list|None = None)-> tuple:
+    if levelList is None:
+        levelList = requests.get('https://api.aredl.net/v2/api/aredl/levels').json()
+    elif not isinstance(levelPoses, set) or not isinstance(username, str):
+        raise TypeError
+    else:
+        for i in levelPoses:
+            if not isinstance(i, int):
+                raise TypeError
+            elif i < 1 or i >= len(levelList):
+                raise IndexError('Placement(s) out of bounds of the list')
+
+    levelPoses = set(map(lambda x : x - 1, levelPoses))
+    if profileData is None:
+        profileData = userAccess(username)[0]
+    if packsList is None:
+        packsList = requests.get('https://api.aredl.net/v2/api/aredl/pack-tiers').json()
+    levelPacks = dict()
+    points = 0
+    levelsBeaten = list(map(lambda x : x['level']['position'], profileData['records']))
+    for i in levelPoses:
+        levelData = levelList[i]
+        if levelData['legacy']:
+            levelPoses.remove(i)
+            continue
+        points += levelData['points']
+        for j in requests.get(f'https://api.aredl.net/v2/api/aredl/levels/{urlConvert(levelData['id'])}/packs').json():
+            if not j['id'] in levelPacks.keys():
+                levelPacks[j['id']] = j
+        levelsBeaten.append(i+1)
+    packPoints = 0
+    #make nameBased = True a comment once v2 of API officialy releases, since right now for some reason IDs of same tiers/packs in different areas do not match sometimes, this can be left on but it is recomended to remove nameBased if the ids are more stable then
+    nameBased = False
+    nameBased = True
+    for i in levelPacks.values():
+        pack = i['id']
+        tier = i['tier']['id']
+        packName = i['name']
+        tierName = i['tier']['name']
+        for j in packsList:
+            if j['id'] == tier or (nameBased and j['name'] == tierName):
+                for k in j['packs']:
+                    if k['id'] == pack or (nameBased and k['name'] == packName):
+                        completedLevelsPack = []
+                        for l in k['levels']:
+                            completedLevelsPack.append(not(l['position'] in levelsBeaten))
+                        if not any(completedLevelsPack):
+                            points += k['points']
+                            packPoints += k['points']
+    return points, packPoints
 
 def main():
     usernameSet = False
@@ -189,6 +188,7 @@ def main():
                 profileData = {'records':[]}
                 lbProfileData = None
                 usernameSet = True
+                print('Entered guest mode')
                 continue
             userData = userAccess(username)
             if userData is None:
@@ -201,6 +201,7 @@ def main():
             lbProfileData = userData[1]
             usernameSet = True
             guest = False
+        print('Profile found')
         levelsBeaten = list(map(lambda x : x['level']['position'], profileData['records']))
         levelName = ''
         skipSearch = False
