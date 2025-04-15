@@ -1,4 +1,5 @@
 import requests
+from copy import deepcopy
 
 ascii_letters = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm', 'n', 'o', 'p', 'q', 'r', 's', 't', 'u', 'v', 'w', 'x', 'y', 'z', 'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z']
 digits = ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9']
@@ -30,7 +31,7 @@ def urlConvert(string: str)-> str:
             queryString += i
     return queryString
 
-def userAccess(username: str)-> dict|None:
+def userAccess(username: str)-> tuple|None:
     if not isinstance(username, str):
         raise TypeError
     delete = False
@@ -55,7 +56,7 @@ def userAccess(username: str)-> dict|None:
         lbProfile = leaderboard['data'][0]
     return profile, lbProfile
 
-def levelPointsAddition(username: str, levelPoses: set, profileData: dict|None = None, levelList: list|None = None, packsList: list|None = None)-> int:
+def levelPointsAddition(username: str, levelPoses: set, profileData: dict|None = None, levelList: list|None = None, packsList: list|None = None)-> tuple:
     if levelList is None:
         levelList = requests.get('https://api.aredl.net/v2/api/aredl/levels').json()
     elif not isinstance(levelPoses, set) or not isinstance(username, str):
@@ -87,6 +88,7 @@ def levelPointsAddition(username: str, levelPoses: set, profileData: dict|None =
             if not j['id'] in levelPacks.keys():
                 levelPacks[j['id']] = j
         levelsBeaten.append(i+1)
+    packPoints = 0
     #make nameBased = True a comment once v2 of API officialy releases, since right now for some reason IDs of same tiers/packs in different areas do not match sometimes, this can be left on but it is recomended to remove nameBased if the ids are more stable then
     nameBased = False
     nameBased = True
@@ -104,7 +106,8 @@ def levelPointsAddition(username: str, levelPoses: set, profileData: dict|None =
                             completedLevelsPack.append(not(l['position'] in levelsBeaten))
                         if not any(completedLevelsPack):
                             points += k['points']
-    return points
+                            packPoints += k['points']
+    return points, packPoints
 
 def levelPlacementSearch(query: str, levelList: list|None = None)-> int:
     if not isinstance(query, str):
@@ -191,27 +194,34 @@ def main():
             if userData is None:
                 print('Profile not found')
                 continue
+            rawUserData = []
+            for i in userData:
+                rawUserData.append(deepcopy(i))
             profileData = userData[0]
             lbProfileData = userData[1]
             usernameSet = True
             guest = False
+        levelsBeaten = list(map(lambda x : x['level']['position'], profileData['records']))
         levelName = ''
         skipSearch = False
         calculatePoints = False
-        levelPos = input('Enter the level>')
+        assumeAsBeaten = False
+        levelPos = input('Enter a command>')
         levelPos = levelPos.strip()
         if len(levelPos) == 0:
             print('No command entered')
             continue
 
         elif levelPos[0] == '?':
-            print('List of avaible commands')
+            print('List of available commands:')
             print(' - "?" - prints this message')
             print(' - "#" - lets you change your username*')
             print(' - "." - refreshes all lists which have been stored to remove useless additional requests being called*')
             print(' - "-XXX" - adds a new level and calculates')
             print('  - "-" - calculates without adding new level, if no levels are present does nothing (also resets everything)')
-            print('* commands with asterisk are not runnable when there is one level stored waiting for calculation')
+            print(' - ":XXX" - adds a new level and assumes it as beaten')
+            print('  - ":" - assumes all levels as beaten')
+            print('* commands with asterisk are not runnable when there is one or more levels stored waiting for calculation')
 
         elif levelPos[0] == '#':
             if len(levelPoses) == 0:
@@ -231,26 +241,37 @@ def main():
                         print('Profile not found')
                         usernameSet = False
                         continue
+                    rawUserData = []
+                    for i in userData:
+                        rawUserData.append(deepcopy(i))
                     profileData = userData[0]
                     lbProfileData = userData[1]
                     continue
+                else:
+                    profileData = {'records':[]}
+                    lbProfileData = None
             else:
                 print('Unable to run when there is a level waiting for calculation')
                 continue
 
         elif levelPos == '-':
+            calculatePoints = True
             skipSearch = True
-
         elif levelPos[0] == '-':
             calculatePoints = True
             levelPos = levelPos[1:]
+        
+        elif levelPos == ':':
+            skipSearch = True
+            for i in levelPoses:
+                profileData['records'].append({'level':{'position':i}})
+            print(f'All levels ({len(levelPoses)}) assumed to be beaten and removed')
+            levelPoses = []
+        elif levelPos[0] == ':':
+            assumeAsBeaten = True
+            levelPos = levelPos[1:]
 
-        if guest:
-            profileData = {'records':[]}
-            lbProfileData = None
-        if skipSearch:
-            calculatePoints = True
-        else:
+        if not skipSearch:
             try:
                 levelPos = levelPlacementSearch(levelPos, levelList)
             except KeyError:
@@ -263,30 +284,46 @@ def main():
                 print('Unknown error happened')
                 continue
             levelName = levelList[levelPos]['name']
-            levelsBeaten = list(map(lambda x : x['level']['position'], profileData['records']))
             if levelPos+1 in levelsBeaten or levelPos+1 in levelPoses:
                 print(f'{levelName} already beaten/in the list, ignored')
             else:
-                levelPoses.append(levelPos+1)
-                print(f'{levelName} added to the list, current amount of levels stored: {len(levelPoses)}')
+                if assumeAsBeaten:
+                    profileData['records'].append({'level':{'position':levelPos+1}})
+                    print(f'{levelName} assumed to be beaten')
+                else:
+                    levelPoses.append(levelPos+1)
+                    print(f'{levelName} added to the list, current amount of levels stored: {len(levelPoses)}')
+
         if calculatePoints:
             setLevelPoses = set()
             for i in levelPoses:
                 setLevelPoses.add(i)
             if len(setLevelPoses) == 0:
                 print('No levels to be calculated')
-                continue
-            try:
-                totalPoints = levelPointsAddition('', setLevelPoses, profileData, levelList, packsList)
-            except:
-                print('Point calculation failed')
             else:
-                if lbProfileData is None:
-                    prevPoints = 0
+                try:
+                    totalPoints = levelPointsAddition('', setLevelPoses, profileData, levelList, packsList)
+                    packPoints = totalPoints[1]
+                    totalPoints = totalPoints[0]
+                except:
+                    print('Point calculation failed')
                 else:
-                    prevPoints = lbProfileData['total_points']-1
-                print(f'{totalPoints/10} points gained on completion of {levelName}, resulting in total amount of points: {(totalPoints + prevPoints)/10}')
-            levelPoses = []
+                    if lbProfileData is None:
+                        prevPoints = 0
+                    else:
+                        prevPoints = lbProfileData['total_points']-1
+                    levelNames = ''
+                    for i in levelPoses:
+                        levelNames += ', ' + levelList[i-1]['name']
+                    levelNames = levelNames[2:]
+                    print(f'{totalPoints/10} points ({packPoints/10} pack points) gained on completion of {levelNames}, resulting in total amount of points: {(totalPoints + prevPoints)/10}')
+                    levelPoses = []
+            if guest:
+                profileData = {'records':[]}
+                lbProfileData = None
+            else:
+                profileData = rawUserData[0]
+                lbProfileData = rawUserData[1]
             continue
 
 if __name__ == '__main__':
