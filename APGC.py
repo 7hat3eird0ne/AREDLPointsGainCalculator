@@ -56,7 +56,7 @@ def userAccess(username: str)-> tuple|None:
         lbProfile = leaderboard['data'][0]
     return profile, lbProfile
 
-def levelPointsAddition(username: str, levelPoses: set, profileData: dict|None = None, levelList: list|None = None, packsList: list|None = None)-> tuple:
+def levelPointsAddition(levelPoses: set, username: str = '', profileData: dict|None = None, levelList: list|None = None, packsList: list|None = None)-> tuple:
     if levelList is None:
         levelList = requests.get('https://api.aredl.net/v2/api/aredl/levels').json()
     elif not isinstance(levelPoses, set) or not isinstance(username, str):
@@ -71,8 +71,6 @@ def levelPointsAddition(username: str, levelPoses: set, profileData: dict|None =
     levelPoses = set(map(lambda x : x - 1, levelPoses))
     if profileData is None:
         profileData = userAccess(username)[0]
-    else:
-        username = profileData['global_name']
     if packsList is None:
         packsList = requests.get('https://api.aredl.net/v2/api/aredl/pack-tiers').json()
     levelPacks = dict()
@@ -188,6 +186,8 @@ def main():
             username = input('Enter your username>')
             if len(username.strip()) == 0:
                 guest = True
+                profileData = {'records':[]}
+                lbProfileData = None
                 usernameSet = True
                 continue
             userData = userAccess(username)
@@ -302,7 +302,7 @@ def main():
                 print('No levels to be calculated')
             else:
                 try:
-                    totalPoints = levelPointsAddition('', setLevelPoses, profileData, levelList, packsList)
+                    totalPoints = levelPointsAddition(setLevelPoses, '', profileData, levelList, packsList)
                     packPoints = totalPoints[1]
                     totalPoints = totalPoints[0]
                 except:
