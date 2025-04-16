@@ -326,7 +326,6 @@ def main():
                     ficPoints = ficPoints[0]
                     if completePointCalc:
                         prevPoints = levelPointsAddition(setLevelsReal, '', profileData, levelList, packsList)[0]
-                        print(prevPoints)
                     end = time.time()
                     calctime = int(1000*(end-start))
                     if (1000*(end-start))%1 != 0:
