@@ -1,4 +1,5 @@
 import requests
+import time
 from copy import deepcopy
 
 ascii_letters = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm', 'n', 'o', 'p', 'q', 'r', 's', 't', 'u', 'v', 'w', 'x', 'y', 'z', 'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z']
@@ -207,6 +208,7 @@ def main():
         skipSearch = False
         calculatePoints = False
         assumeAsBeaten = False
+        completePointCalc = False
         levelPos = input('Enter a command>')
         levelPos = levelPos.strip()
         if len(levelPos) == 0:
@@ -220,6 +222,7 @@ def main():
             print(' - "." - refreshes all lists which have been stored to remove useless additional requests being called*')
             print(' - "-XXX" - adds a new level and calculates')
             print('  - "-" - calculates without adding new level, if no levels are present does nothing (also resets everything)')
+            print('  - "-%" - same as "-" but calculates the entire percentage manually, can be used if points are being given unreliably, takes around 10 seconds for 50 levels')
             print(' - ":XXX" - adds a new level and assumes it as beaten')
             print('  - ":" - assumes all levels as beaten')
             print('* commands with asterisk are not runnable when there is one or more levels stored waiting for calculation')
@@ -258,6 +261,10 @@ def main():
         elif levelPos == '-':
             calculatePoints = True
             skipSearch = True
+        elif levelPos == '-%':
+            calculatePoints = True
+            skipSearch = True
+            completePointCalc = True
         elif levelPos[0] == '-':
             calculatePoints = True
             levelPos = levelPos[1:]
@@ -297,27 +304,48 @@ def main():
 
         if calculatePoints:
             setLevelPoses = set()
+            setLevelsFicTotal = set()
+            setLevelsReal = set()
             for i in levelPoses:
                 setLevelPoses.add(i)
+            for i in profileData['records']:
+                if not 'id' in i.keys():
+                    setLevelsFicTotal.add(i['level']['position'])
+                else:
+                    setLevelsReal.add(i['level']['position'])
+            setLevelsFicTotal = setLevelsFicTotal.union(setLevelPoses)
             if len(setLevelPoses) == 0:
                 print('No levels to be calculated')
             else:
                 try:
+                    start = time.time()
                     totalPoints = levelPointsAddition(setLevelPoses, '', profileData, levelList, packsList)
                     packPoints = totalPoints[1]
                     totalPoints = totalPoints[0]
+                    ficPoints = levelPointsAddition(setLevelsFicTotal, '', profileData, levelList, packsList)
+                    ficPoints = ficPoints[0]
+                    if completePointCalc:
+                        prevPoints = levelPointsAddition(setLevelsReal, '', profileData, levelList, packsList)[0]
+                        print(prevPoints)
+                    end = time.time()
+                    calctime = int(1000*(end-start))
+                    if (1000*(end-start))%1 != 0:
+                        calctime += 1
+                    print(str(calctime) + 'ms')
                 except:
+                    raise
                     print('Point calculation failed')
                 else:
-                    if lbProfileData is None:
-                        prevPoints = 0
-                    else:
-                        prevPoints = lbProfileData['total_points']-1
+                    if not completePointCalc:
+                        if lbProfileData is None:
+                            prevPoints = 0
+                        else:
+                            prevPoints = lbProfileData['total_points']-1
                     levelNames = ''
                     for i in levelPoses:
                         levelNames += ', ' + levelList[i-1]['name']
                     levelNames = levelNames[2:]
-                    print(f'{totalPoints/10} points ({packPoints/10} pack points) gained on completion of {levelNames}, resulting in total amount of points: {(totalPoints + prevPoints)/10}')
+                    print(f'{totalPoints/10} points ({packPoints/10} pack points) gained on completion of {levelNames}, resulting in total amount of points: {(ficPoints + prevPoints)/10} (Global total: {prevPoints/10})')
                     levelPoses = []
             if guest:
                 profileData = {'records':[]}
