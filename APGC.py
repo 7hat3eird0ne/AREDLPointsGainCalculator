@@ -342,7 +342,7 @@ def main():
                             prevPoints = lbProfileData['total_points']-1
                     levelNames = ''
                     for i in levelPoses:
-                        levelNames += ', ' + levelList[i-1]['name']
+                        levelNames += ', ' + levelList[i-1]['name'] + ' (#' + str(i) + ')'
                     levelNames = levelNames[2:]
                     print(f'{totalPoints/10} points ({packPoints/10} pack points) gained on completion of {levelNames}, resulting in total amount of points: {(ficPoints + prevPoints)/10} (Global total: {prevPoints/10})')
                     levelPoses = []
