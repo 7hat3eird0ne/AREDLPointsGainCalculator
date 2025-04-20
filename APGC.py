@@ -123,10 +123,115 @@ def levelPlacementSearch(query: str, levelList: list|None = None)-> int:
                 raise KeyError('Level with that name not found')
     return levelPos
 
+def initialsSequences(sequences: str, levelList: list|None = None)-> tuple:
+    if levelList is None:
+        levelList = requests.get('https://api.aredl.net/v2/api/aredl/levels').json()
+    if not isinstance(sequences, str) or not isinstance(levelList, list):
+        raise TypeError
+    sequences = sequences.strip().lower()
+    if len(sequences) == 0:
+        return ()
+    currentsequencesIndex = 0
+    h = 0
+    result = []
+    while h < len(levelList):
+        i = levelList[h]
+        levelName = i['name'].strip().lower()
+        if levelName[0] == sequences[currentsequencesIndex]:
+            currentsequencesIndex += 1
+            if currentsequencesIndex == len(sequences):
+                currentsequencesIndex = 0
+                result.append(tuple(range(h+2-len(sequences),h+2)))
+                h -= len(sequences)-1
+        elif levelName[0] == sequences[0]:
+            currentsequencesIndex = 1
+            if currentsequencesIndex == len(sequences):
+                result.append(tuple(range(h+2-len(sequences),h+2)))
+                h -= len(sequences)            
+        else:
+            currentsequencesIndex = 0
+            
+        h += 1
+    return tuple(result)
+
+def sequenceInfo():
+    while True:
+        sequences = input('Enter sequence<')
+        levelList = requests.get('https://api.aredl.net/v2/api/aredl/levels').json()
+        result = initialsSequences(sequences, levelList)
+        if len(result) == 0:
+            print('No result found')
+            continue
+        records = []
+        acrossRecords = []
+        fullFirst = True
+        for i in result:
+            first = True
+            for j in i:
+                print('-', end='')
+                if first:
+                    print(end=' ')
+                    first = False
+                print(j, end='')
+            print('\n  - Levels:')
+            for j in i:
+                levelData = levelList[j-1]
+                print('    - ' + levelData['name'])
+                if len(levelData['tags']) == 0:
+                    print('      - No Tags')
+                else:
+                    for k in levelData['tags']:
+                        print('      - ' + k)
+            first = True
+            for j in i:
+                levelId = levelList[j-1]['id']
+                newRecords = requests.get(f'https://api.aredl.net/v2/api/aredl/levels/{levelId}/records').json()
+                newRecords = list(map(lambda x : x['submitted_by']['global_name'], newRecords))
+                if fullFirst:
+                    first = False
+                    fullFirst = False
+                    records = newRecords
+                    acrossRecords = newRecords
+                    continue
+                elif first:
+                    first = False
+                    records = newRecords
+                    continue
+                tempRecords = records.copy()
+                ch = 0
+                for h in range(len(tempRecords)):
+                    i = tempRecords[h]
+                    if not i in newRecords:
+                        records.pop(ch)
+                    else:
+                        ch += 1
+                tempRecords = acrossRecords.copy()
+                ch = 0
+                for h in range(len(tempRecords)):
+                    i = tempRecords[h]
+                    if not i in newRecords:
+                        acrossRecords.pop(ch)
+                    else:
+                        ch += 1
+            print('  - Completed by:')
+            if len(records) == 0:
+                print('    - None')
+            else:
+                for i in records:
+                    print('    - ' + i)
+            print()
+        if False:
+            print('- All sequences completed by:')
+            if len(acrossRecords) == 0:
+                print('  - None')
+            else:
+                for i in acrossRecords:
+                    print('  - ' + i)
+
 def levelPointsAddition(levelPoses: set, username: str = '', profileData: dict|None = None, levelList: list|None = None, packsList: list|None = None)-> tuple:
     if levelList is None:
         levelList = requests.get('https://api.aredl.net/v2/api/aredl/levels').json()
-    elif not isinstance(levelPoses, set) or not isinstance(username, str):
+    if not isinstance(levelPoses, set) or not isinstance(username, str):
         raise TypeError
     else:
         for i in levelPoses:
@@ -180,6 +285,9 @@ def main():
     packsList = requests.get('https://api.aredl.net/v2/api/aredl/pack-tiers').json()
     levelPoses = []
     guest = False
+    modes = {
+        0: [sequenceInfo, 'Sequence Finder']
+    }
     print('Do "?" for help')
     while True:
         if not usernameSet:
@@ -225,6 +333,9 @@ def main():
             print('  - "-%" - same as "-" but calculates the entire percentage manually, can be used if points are being given unreliably, takes around 10 seconds for 50 levels')
             print(' - ":XXX" - adds a new level and assumes it as beaten')
             print('  - ":" - assumes all levels as beaten')
+            print(' - ",M" - temporarily enters a different mode, then by running EOFError or keyboard interupt (to actually interupt, do it twice) you can exit (does not affect the main mode)')
+            for key, value in modes.items():
+                print(f'  - ",{str(key)}" - {value[1]}')
             print('* commands with asterisk are not runnable when there is one or more levels stored waiting for calculation')
 
         elif levelPos[0] == '#':
@@ -279,6 +390,21 @@ def main():
             assumeAsBeaten = True
             levelPos = levelPos[1:]
 
+        elif len(levelPos) == 1:
+            pass
+
+        elif levelPos[0] == ',' and levelPos[1:].isdecimal():
+            if not int(levelPos[1:]) in modes.keys():
+                print('Invalid mode')
+            else:
+                print(f'Entering {modes[int(levelPos[1:])][1]}')
+                try:
+                    modes[int(levelPos[1:])][0]()
+                except (KeyboardInterrupt, EOFError):
+                    print('Exitting the mode (raise error again to quit)')
+                except:
+                    print('Unknown error happened')
+
         if not skipSearch:
             try:
                 levelPos = levelPlacementSearch(levelPos, levelList)
@@ -292,15 +418,16 @@ def main():
                 print('Unknown error happened')
                 continue
             levelName = levelList[levelPos]['name']
+            levelPlacemenet = levelPos + 1
             if levelPos+1 in levelsBeaten or levelPos+1 in levelPoses:
-                print(f'{levelName} already beaten/in the list, ignored')
+                print(f'{levelName} (#{levelPlacemenet}) already beaten/in the list, ignored')
             else:
                 if assumeAsBeaten:
                     profileData['records'].append({'level':{'position':levelPos+1}})
-                    print(f'{levelName} assumed to be beaten')
+                    print(f'{levelName} (#{levelPlacemenet}) assumed to be beaten')
                 else:
                     levelPoses.append(levelPos+1)
-                    print(f'{levelName} added to the list, current amount of levels stored: {len(levelPoses)}')
+                    print(f'{levelName} (#{levelPlacemenet}) added to the list, current amount of levels stored: {len(levelPoses)}')
 
         if calculatePoints:
             setLevelPoses = set()
@@ -332,7 +459,6 @@ def main():
                         calctime += 1
                     print(str(calctime) + 'ms')
                 except:
-                    raise
                     print('Point calculation failed')
                 else:
                     if not completePointCalc:
