@@ -156,7 +156,7 @@ def initialsSequences(sequences: str, levelList: list|None = None)-> tuple:
 
 def sequenceInfo():
     while True:
-        sequences = input('Enter sequence<')
+        sequences = input('Enter sequence>')
         levelList = requests.get('https://api.aredl.net/v2/api/aredl/levels').json()
         result = initialsSequences(sequences, levelList)
         if len(result) == 0:
