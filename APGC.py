@@ -177,8 +177,8 @@ def sequenceInfo():
         if len(result) == 0:
             print('No result found')
             continue
-        records = []
-        acrossRecords = []
+        records = set()
+        acrossRecords = set()
         fullFirst = True
         for i in result:
             first = True
@@ -201,7 +201,7 @@ def sequenceInfo():
             for j in i:
                 levelId = levelList[j-1]['id']
                 newRecords = requests.get(f'https://api.aredl.net/v2/api/aredl/levels/{levelId}/records').json()
-                newRecords = list(map(lambda x : x['submitted_by']['global_name'], newRecords))
+                newRecords = set(map(lambda x : x['submitted_by']['global_name'], newRecords))
                 if fullFirst:
                     first = False
                     fullFirst = False
@@ -212,22 +212,8 @@ def sequenceInfo():
                     first = False
                     records = newRecords
                     continue
-                tempRecords = records.copy()
-                ch = 0
-                for h in range(len(tempRecords)):
-                    i = tempRecords[h]
-                    if not i in newRecords:
-                        records.pop(ch)
-                    else:
-                        ch += 1
-                tempRecords = acrossRecords.copy()
-                ch = 0
-                for h in range(len(tempRecords)):
-                    i = tempRecords[h]
-                    if not i in newRecords:
-                        acrossRecords.pop(ch)
-                    else:
-                        ch += 1
+                records = records.intersection(newRecords)
+                acrossRecords = acrossRecords.intersection(newRecords)
             print('  - Completed by:')
             if len(records) == 0:
                 print('    - None')
@@ -236,6 +222,7 @@ def sequenceInfo():
                     print('    - ' + i)
             print()
         if False:
+            # sadly i actually dont know why this no work ?????, does the normal thing work fine??
             print('- All sequences completed by:')
             if len(acrossRecords) == 0:
                 print('  - None')
