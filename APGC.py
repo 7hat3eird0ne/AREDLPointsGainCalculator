@@ -123,42 +123,57 @@ def levelPlacementSearch(query: str, levelList: list|None = None)-> int:
                 raise KeyError('Level with that name not found')
     return levelPos
 
-def initialsSequences(sequences: str, levelList: list|None = None)-> tuple:
+def initialsSequences(sequences: str, levelList: list|None = None, repeatedAllowed: bool = False)-> tuple:
     if levelList is None:
         levelList = requests.get('https://api.aredl.net/v2/api/aredl/levels').json()
-    if not isinstance(sequences, str) or not isinstance(levelList, list):
+    if not isinstance(sequences, str) or not isinstance(levelList, list) or not isinstance(repeatedAllowed, bool):
         raise TypeError
     sequences = sequences.strip().lower()
     if len(sequences) == 0:
         return ()
-    currentsequencesIndex = 0
+    currentSequencesIndex = 0
     h = 0
     result = []
+    repeats = 0
     while h < len(levelList):
         i = levelList[h]
         levelName = i['name'].strip().lower()
-        if levelName[0] == sequences[currentsequencesIndex]:
-            currentsequencesIndex += 1
-            if currentsequencesIndex == len(sequences):
-                currentsequencesIndex = 0
-                result.append(tuple(range(h+2-len(sequences),h+2)))
-                h -= len(sequences)-1
+        if levelName[0] == sequences[currentSequencesIndex]:
+            currentSequencesIndex += 1
+            if currentSequencesIndex == len(sequences):
+                currentSequencesIndex = 0
+                result.append(tuple(range(h+2-len(sequences)-repeats,h+2)))
+                h -= len(sequences)-1+repeats
+                repeats = 0
+        elif levelName[0] == sequences[max(currentSequencesIndex-1,0)] and repeatedAllowed:
+            if currentSequencesIndex != 0:
+                repeats += 1
+            if currentSequencesIndex == len(sequences):
+                currentSequencesIndex = 0
+                result.append(tuple(range(h+2-len(sequences)-repeats,h+2)))
+                h -= len(sequences)+repeats
+                repeats = 0
         elif levelName[0] == sequences[0]:
-            currentsequencesIndex = 1
-            if currentsequencesIndex == len(sequences):
-                result.append(tuple(range(h+2-len(sequences),h+2)))
-                h -= len(sequences)            
+            currentSequencesIndex = 1
+            if currentSequencesIndex == len(sequences):
+                currentSequencesIndex = 0
+                result.append(tuple(range(h+2-len(sequences)-repeats,h+2)))
+                h -= len(sequences)+repeats
+                repeats = 0  
         else:
-            currentsequencesIndex = 0
+            currentSequencesIndex = 0
             
         h += 1
     return tuple(result)
 
 def sequenceInfo():
+    levelList = requests.get('https://api.aredl.net/v2/api/aredl/levels').json()
     while True:
         sequences = input('Enter sequence>')
-        levelList = requests.get('https://api.aredl.net/v2/api/aredl/levels').json()
-        result = initialsSequences(sequences, levelList)
+        if sequences[0] == '%':
+            result = initialsSequences(sequences[1:], levelList, True)
+        else:
+            result = initialsSequences(sequences, levelList)
         if len(result) == 0:
             print('No result found')
             continue
@@ -286,7 +301,7 @@ def main():
     levelPoses = []
     guest = False
     modes = {
-        0: [sequenceInfo, 'Sequence Finder']
+        0: [sequenceInfo, 'Sequence Finder', 'searches for sequences based of given target', ['entering a target sequence name which starts with "%" allows repeated letters, making it possible for "BEAAAASST" match to "BEAST"']]
     }
     print('Do "?" for help')
     while True:
@@ -335,7 +350,11 @@ def main():
             print('  - ":" - assumes all levels as beaten')
             print(' - ",M" - temporarily enters a different mode, then by running EOFError or keyboard interupt (to actually interupt, do it twice) you can exit (does not affect the main mode)')
             for key, value in modes.items():
-                print(f'  - ",{str(key)}" - {value[1]}')
+                print(f'  - ",{str(key)}" - {value[1]} - {value[2]}', end = '')
+                if len(value) == 4:
+                    print()
+                for i in value[3]:
+                    print(F'   - {i}')
             print('* commands with asterisk are not runnable when there is one or more levels stored waiting for calculation')
 
         elif levelPos[0] == '#':
